@@ -1,0 +1,193 @@
+; 
+; TeensyZ80 Mode 2 Interrupt test
+; Prints a prompt to console, then infinitely halts.
+; The timer interrupt prints a '.' every second.
+; 
+
+  .org 0000h
+start:
+  di
+  ld sp, 3fffh
+  im 2
+  ld a, 01h
+  ld I, a
+  ld de, str_console_prompt
+  call print_string
+  ei
+
+iloop:
+  halt
+  jr iloop
+  
+
+print_string:
+  push af 
+print_string_loop: 
+  ld a, (de)
+  or a
+  jr z, print_string_end
+  out ($03), a 
+  inc de
+  jr print_string_loop 
+print_string_end:
+  pop af
+  ret
+  
+ihdlr_unknown:
+  di
+  push de
+  ld de, str_unknownint
+  call print_string
+  pop de
+  ei
+  reti
+
+ihdlr_second_timer:
+  di
+  push af
+  ld a, 02eh        ;print period to console
+  out ($03), a
+  pop af
+  ei
+  reti
+
+str_unknownint:
+  defb 'Unknown Interrupt Vector',0
+
+str_console_prompt:
+  defb 'TeensyZ80>',0
+  
+; interrupt vector table
+  .ORG 0100h
+int_vector_table:
+  dw ihdlr_unknown
+  dw ihdlr_second_timer
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+end
