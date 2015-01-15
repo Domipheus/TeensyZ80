@@ -1,0 +1,480 @@
+; 
+; TeensyZ80 SD files test
+; prints directory listing of / to console
+; print contents of /README.TXT
+; display SPECCY.565 to a fixed test vram
+; 
+
+PORT_VRAM_BUFFER_LOC    equ 0
+PORT_VRAM_DRAW          equ 8
+
+PORT_FILESYS_READ_WRITE equ 10
+PORT_FILESYS_OPEN_CLOSE equ 11
+PORT_FILESYS_NEXT       equ 12
+
+FILESYS_RW_EXEC         equ 13
+FILESYS_RW_SETCMDMEMPTR equ 2
+FILESYS_OPEN_OPENFILE   equ 5
+FILESYS_OPEN_SETMEMPTR  equ 6
+FILESYS_NEXT_GETNEXT    equ 9
+FILESYS_NEXT_SETMEMPTR  equ 10
+FILESYS_CLOSE_FILE      equ 12
+
+OPEN_READ               equ 0
+OPEN_WRITE              equ 1
+OPEN_WRITE_CREATE       equ 2
+OPEN_APPEND             equ 3
+OPEN_RDWR               equ 4
+
+
+COLOUR_BLACK   equ 00000h
+COLOUR_BLUE    equ 0001Fh
+COLOUR_RED     equ 0F800h
+COLOUR_GREEN   equ 007E0h
+COLOUR_CYAN    equ 007FFh
+COLOUR_MAGENTA equ 0F81Fh
+COLOUR_YELLOW  equ 0FFE0h
+COLOUR_WHITE   equ 0FFFFh
+
+VRAM_HIGH_BEGIN     equ 04h ; vram at address 0x0400
+
+;
+; openfile expects 
+;
+;  openfile_cmd {
+; 0:    uint8_t error;    // writes
+; 1:    uint32_t size;    // writes
+; 5:    uint8_t type;     // writes
+; 6:    uint8_t flags;    // reads
+; 7:    char    name[13]; // reads, null-terminated
+;  }
+;
+; getnext writes 
+;
+;  getnext_output {
+; 0:    uint8_t  error;
+; 1:    uint32_t filesize;
+; 5:    uint8_t  flags;
+; 6:    char     name[13]; //null-terminated
+;  }
+; 
+; read/write reads
+;
+; #define CMD_READ  0
+; #define CMD_WRITE 1
+;   struct {
+; 0:    uint8_t error_code; // writes
+; 1:    uint8_t op_type;    // CMD_READ or CMD_WRITE
+; 2:    uint16_t file_offset; //ignored if OPEN_APPEND
+; 4:    uint16_t block_size;
+; 6:    uint16_t mem_buffer_ptr;
+;   } 
+;
+
+  .org 0000h
+start:
+  di
+  ld sp, 3fffh
+  im 2
+  ld a, 02h
+  ld I, a
+  ld de, str_console_prompt
+  call print_string
+  call newline
+  ld de, file_desc
+  call print_string
+  
+  ld a, VRAM_HIGH_BEGIN                  
+  out (PORT_VRAM_BUFFER_LOC), a ; 'vram' starts here
+  
+  ; open the root dir as a file
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_root_dir_open
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)               ; load the error byte
+  or a
+  jr z, L01                ; if successful jump over the fail
+Lfile_fail:
+  add a, 30h               ; get ascii 0-9
+  out ($03), a 
+  call file_error_report
+L01:
+  
+  ld a, FILESYS_NEXT_SETMEMPTR
+  out (PORT_FILESYS_NEXT), a
+  ld de, scratch_mem
+  ld a, e
+  out (PORT_FILESYS_NEXT), a
+  ld a, d
+  out (PORT_FILESYS_NEXT), a
+  ld hl, scratch_mem
+  ld de, scratch_mem + 6
+getnextfile:
+  call newline
+  ld a, FILESYS_NEXT_GETNEXT
+  out (PORT_FILESYS_NEXT), a
+  ld a, (hl)
+  or a
+  jr nz, nomorefiles
+  call print_string ; prints string at bc
+  jr getnextfile
+nomorefiles:
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  call newline
+  call newline
+  
+  ld de, str_console_prompt
+  call print_string
+  
+  
+  call newline
+  ld de, readme_desc
+  call print_string
+  
+loadreadme:
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_readme_open_read
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jr nz, Lfile_fail                  ; if non-zero jump to fail above
+
+  call newline
+  
+  ; assume < 256b file for now
+  ld de, filesys_readme_open_read + 1
+  ld a, (de)
+  
+  ld hl, filesys_read_request+4
+  ld (hl), a
+  
+  ld a, FILESYS_RW_SETCMDMEMPTR
+  out (PORT_FILESYS_READ_WRITE), a
+  ld de, filesys_read_request
+  ld a, e
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, d
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, FILESYS_RW_EXEC
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jr nz, Lfile_fail                  ; if non-zero jump to fail above
+
+  ld de, scratch_mem                 ; the cmd instructed to read into scratch
+  call print_string
+  call newline
+  
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a   ; close README.txt
+  
+  
+  ; load an image called 'speccy.565'
+  
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_speccy_open_read
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jp nz, Lfile_fail                  ; if non-zero jump to fail above
+
+  call newline
+
+  ld de, filesys_speccy_open_read + 1
+  ld hl, filesys_speccy_read_req + 4
+  ld a, (de)
+  ld (hl), a
+  inc de
+  inc hl
+  ld a, (de)
+  ld (hl), a
+  
+    
+  ld a, FILESYS_RW_SETCMDMEMPTR
+  out (PORT_FILESYS_READ_WRITE), a
+  ld de, filesys_speccy_read_req
+  ld a, e
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, d
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, FILESYS_RW_EXEC
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jp nz, Lfile_fail                  ; if non-zero jump to fail above
+  
+  ld a, 0
+  out (PORT_VRAM_DRAW), a ; draw vram
+  
+  
+  ei
+iloop: 
+  halt
+  jr iloop
+  
+
+print_string:
+  push af 
+  push de
+print_string_loop: 
+  ld a, (de)
+  or a
+  jr z, print_string_end
+  out ($03), a 
+  inc de
+  jr print_string_loop 
+print_string_end:
+  pop de
+  pop af
+  ret
+  
+newline:
+  push af
+  in a, ($04)
+  inc a
+  out ($04), a
+  ld a, 0
+  out ($05), a
+  pop af
+  ret
+  
+ihdlr_ignore:
+  di
+  ei
+  reti
+
+ihdlr_unknown:
+  di
+  push de
+  ld de, str_unknownint
+  call print_string
+  pop de
+  ei
+  reti
+
+str_unknownint:
+  defb 'Unknown Interrupt Vector',0
+
+  
+  
+; interrupt vector table
+  .ORG 0200h
+int_vector_table:
+  dw ihdlr_unknown
+  dw ihdlr_ignore   ;fired every second, ignore it
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  
+  
+file_error_report:
+  call newline
+  ld de, str_error_file
+  call print_string
+  call fatal_error_halt
+  ret
+
+fatal_error_halt:
+  call newline
+  ld bc, COLOUR_RED
+  call setcolour
+  ld de, str_halt
+  call print_string
+fatal_error_halt_1:
+  halt
+  jr fatal_error_halt_1
+
+setcolour: ;16-bit colour in bc
+  push af
+  ld a, b
+  out ($06), a
+  ld a, c
+  out ($06), a
+  pop af
+  ret
+
+str_console_prompt:
+  defb 'TeensyZ80> ',0
+  
+file_desc:
+  defb 'SD:/',0
+  
+readme_desc:
+  defb 'contents of README.TXT:',0
+  
+str_error_file:
+  defb 'Filesystem error!',0
+  
+str_halt:
+  defb 'Fatal Error. <HALT>',0
+  
+filesys_root_dir_open:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'/',0,0,0 ; error byte (init to error), open type byte, filename 8.3, null
+  
+filesys_readme_open_read:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'README.TXT',0,0,0
+  
+filesys_test_open_write:
+  defb 0ffh,0,0,0,0,0,OPEN_WRITE,'TEST.TXT',0,0,0,0,0,0 
+  
+filesys_speccy_open_read:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'SPECCY.565',0,0,0
+  
+filesys_read_request:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,0,0,0,0,0
+  defw scratch_mem
+  
+  
+filesys_speccy_read_req:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,0,0,0,0,0
+  defb 0, VRAM_HIGH_BEGIN
+  
+scratch_mem:
+
+end
