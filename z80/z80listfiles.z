@@ -3,7 +3,7 @@
 ; prints directory listing of / to console
 ; print contents of /README.TXT
 ; display SPECCY.565 to a fixed test vram
-; 
+; write "0123456\0" to /TEST.TXT
 
 PORT_VRAM_BUFFER_LOC    equ 0
 PORT_VRAM_DRAW          equ 8
@@ -222,8 +222,51 @@ loadreadme:
   or a
   jp nz, Lfile_fail                  ; if non-zero jump to fail above
   
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  
+writefile:
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_test_open_write
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jp nz, Lfile_fail                  ; if non-zero jump to fail above
+      
+  call newline
+  
+  ld de, str_write_file
+  call print_string
+  
+  ld a, FILESYS_RW_SETCMDMEMPTR
+  out (PORT_FILESYS_READ_WRITE), a
+  ld de, filesys_write_request
+  ld a, e
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, d
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, FILESYS_RW_EXEC
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jp nz, Lfile_fail                  ; if non-zero jump to fail above
+  
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+
+
+  
+  ld de, str_write_file_OK
+  call print_string
+  
   ld a, 0
-  out (PORT_VRAM_DRAW), a ; draw vram
+  out (PORT_VRAM_DRAW), a            ; draw vram
   
   
   ei
@@ -446,6 +489,12 @@ file_desc:
 readme_desc:
   defb 'contents of README.TXT:',0
   
+str_write_file:
+  defb 'Writing to TEST.TXT...',0
+  
+str_write_file_OK:
+  defb 'OK',0
+  
 str_error_file:
   defb 'Filesystem error!',0
   
@@ -459,7 +508,7 @@ filesys_readme_open_read:
   defb 0ffh,0,0,0,0,0,OPEN_READ,'README.TXT',0,0,0
   
 filesys_test_open_write:
-  defb 0ffh,0,0,0,0,0,OPEN_WRITE,'TEST.TXT',0,0,0,0,0,0 
+  defb 0ffh,0,0,0,0,0,OPEN_WRITE_CREATE,'TEST.TXT',0,0,0,0,0,0 
   
 filesys_speccy_open_read:
   defb 0ffh,0,0,0,0,0,OPEN_READ,'SPECCY.565',0,0,0
@@ -469,11 +518,18 @@ filesys_read_request:
   defb 0ffh,0,0,0,0,0
   defw scratch_mem
   
+filesys_write_request:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,1,0,0,8,0
+  defw test_string
   
 filesys_speccy_read_req:
   ; error, type, offsetlo,offsethi,sizelo,sizehi
   defb 0ffh,0,0,0,0,0
   defb 0, VRAM_HIGH_BEGIN
+  
+test_string:
+  defb '0123456',0
   
 scratch_mem:
 
