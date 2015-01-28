@@ -74,11 +74,11 @@
 #define WR 28
 #define RD 25
 #define M1 32
-#define MREQ 33
+#define MREQ 31
 #define IOREQ 24
 #define RFSH 27
 #define RESET 26
-#define INT 31
+#define INT 33
 
 /*
  *  SPI TFT LCD 2.2" 320x240
