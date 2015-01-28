@@ -1,0 +1,231 @@
+; 
+; TeensyZ80 list directory program
+
+PORT_VRAM_BUFFER_LOC    equ 0
+PORT_VRAM_DRAW          equ 8
+
+PORT_FILESYS_READ_WRITE equ 10
+PORT_FILESYS_OPEN_CLOSE equ 11
+PORT_FILESYS_NEXT       equ 12
+
+FILESYS_RW_EXEC         equ 13
+FILESYS_RW_SETCMDMEMPTR equ 2
+FILESYS_OPEN_OPENFILE   equ 5
+FILESYS_OPEN_SETMEMPTR  equ 6
+FILESYS_NEXT_GETNEXT    equ 9
+FILESYS_NEXT_SETMEMPTR  equ 10
+FILESYS_CLOSE_FILE      equ 12
+
+OPEN_READ               equ 0
+OPEN_WRITE              equ 1
+OPEN_WRITE_CREATE       equ 2
+OPEN_APPEND             equ 3
+OPEN_RDWR               equ 4
+
+
+COLOUR_BLACK   equ 00000h
+COLOUR_BLUE    equ 0001Fh
+COLOUR_RED     equ 0F800h
+COLOUR_GREEN   equ 007E0h
+COLOUR_CYAN    equ 007FFh
+COLOUR_MAGENTA equ 0F81Fh
+COLOUR_YELLOW  equ 0FFE0h
+COLOUR_WHITE   equ 0FFFFh
+
+VRAM_HIGH_BEGIN     equ 04h ; vram at address 0x0400
+
+;
+; openfile expects 
+;
+;  openfile_cmd {
+; 0:    uint8_t error;    // writes
+; 1:    uint32_t size;    // writes
+; 5:    uint8_t type;     // writes
+; 6:    uint8_t flags;    // reads
+; 7:    char    name[13]; // reads, null-terminated
+;  }
+;
+; getnext writes 
+;
+;  getnext_output {
+; 0:    uint8_t  error;
+; 1:    uint32_t filesize;
+; 5:    uint8_t  flags;
+; 6:    char     name[13]; //null-terminated
+;  }
+; 
+; read/write reads
+;
+; #define CMD_READ  0
+; #define CMD_WRITE 1
+;   struct {
+; 0:    uint8_t error_code; // writes
+; 1:    uint8_t op_type;    // CMD_READ or CMD_WRITE
+; 2:    uint16_t file_offset; //ignored if OPEN_APPEND
+; 4:    uint16_t block_size;
+; 6:    uint16_t mem_buffer_ptr;
+;   } 
+;
+
+  .org 01000h
+start:
+  ; open the root dir as a file
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_root_dir_open
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)               ; load the error byte
+  or a
+  jr z, L01                ; if successful jump over the fail
+Lfile_fail:
+  add a, 30h               ; get ascii 0-9
+  out ($03), a 
+  call file_error_report
+L01:
+  
+  ld a, FILESYS_NEXT_SETMEMPTR
+  out (PORT_FILESYS_NEXT), a
+  ld de, scratch_mem
+  ld a, e
+  out (PORT_FILESYS_NEXT), a
+  ld a, d
+  out (PORT_FILESYS_NEXT), a
+  ld hl, scratch_mem
+  ld de, scratch_mem + 6
+getnextfile:
+  ld a, FILESYS_NEXT_GETNEXT
+  out (PORT_FILESYS_NEXT), a
+  ld a, (hl)
+  or a
+  jr nz, nomorefiles
+  ld a, 4
+  out ($05), a ; tab in
+  call print_string ; prints string at bc
+  call newline
+  jr getnextfile
+nomorefiles:
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  call newline
+  ld a, 0
+  out ($05), a ; tab out
+  
+  ld de, aaron_lol
+  
+  call print_string 
+  ret
+  
+
+print_string:
+  push af 
+  push de
+print_string_loop: 
+  ld a, (de)
+  or a
+  jr z, print_string_end
+  out ($03), a 
+  inc de
+  jr print_string_loop 
+print_string_end:
+  pop de
+  pop af
+  ret
+  
+newline:
+  push af
+  in a, ($04)
+  inc a
+  out ($04), a
+  ld a, 0
+  out ($05), a
+  pop af
+  ret
+  
+file_error_report:
+  call newline
+  ld de, str_error_file
+  call print_string
+  call fatal_error_halt
+  ret
+
+fatal_error_halt:
+  call newline
+  ld bc, COLOUR_RED
+  call setcolour
+  ld de, str_halt
+  call print_string
+fatal_error_halt_1:
+  halt
+  jr fatal_error_halt_1
+
+setcolour: ;16-bit colour in bc
+  push af
+  ld a, b
+  out ($06), a
+  ld a, c
+  out ($06), a
+  pop af
+  ret
+
+str_console_prompt:
+  defb 'TeensyZ80> ',0
+  
+file_desc:
+  defb 'SD:/',0
+  
+readme_desc:
+  defb 'contents of README.TXT:',0
+  
+str_write_file:
+  defb 'Writing to TEST.TXT...',0
+  
+str_write_file_OK:
+  defb 'OK',0
+  
+str_error_file:
+  defb 'Filesystem error!',0
+  
+str_halt:
+  defb 'Fatal Error. <HALT>',0
+  
+filesys_root_dir_open:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'/',0,0,0 ; error byte (init to error), open type byte, filename 8.3, null
+  
+filesys_readme_open_read:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'README.TXT',0,0,0
+  
+filesys_test_open_write:
+  defb 0ffh,0,0,0,0,0,OPEN_WRITE_CREATE,'TEST.TXT',0,0,0,0,0,0 
+  
+filesys_speccy_open_read:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'SPECCY.565',0,0,0
+  
+filesys_read_request:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,0,0,0,0,0
+  defw scratch_mem
+  
+filesys_write_request:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,1,0,0,8,0
+  defw test_string
+  
+filesys_speccy_read_req:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,0,0,0,0,0
+  defb 0, VRAM_HIGH_BEGIN
+  
+test_string:
+  defb '0123456',0
+  
+aaron_lol:
+  defb 'Hay Aaron! lel',0
+  
+scratch_mem:
+
+end

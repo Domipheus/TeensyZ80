@@ -1,0 +1,16 @@
+; 
+; TeensyZ80 clear screen
+
+
+PORT_DISP_CLEAR         equ 20
+
+
+  .org 01000h
+start:
+  ld a,0
+  out ($04), a
+  ld a, 0
+  out ($05), a
+  out (PORT_DISP_CLEAR), a
+  ret
+end

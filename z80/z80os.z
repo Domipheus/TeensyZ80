@@ -1,0 +1,568 @@
+; Simple Z80 bootloader/OS for Z80Teensy project
+
+SERIAL_CMD_SET_INTVECTOR equ 0F1h
+SERIAL_CMD_SET_RATE equ 0F2h
+SERIAL_CMD_INIT equ 0FAh
+
+INTVECTOR_SERIAL_DEVICE equ 2
+
+
+PORT_RAM_BANK_SET       equ 200
+
+PORT_VRAM_BUFFER_LOC    equ 0
+PORT_VRAM_DRAW          equ 8
+
+PORT_MEM_SIZE           equ 100
+
+PORT_DISP_CLEAR         equ 20
+
+PORT_FILESYS_READ_WRITE equ 10
+PORT_FILESYS_OPEN_CLOSE equ 11
+PORT_FILESYS_NEXT       equ 12
+
+FILESYS_RW_EXEC         equ 13
+FILESYS_RW_SETCMDMEMPTR equ 2
+FILESYS_OPEN_OPENFILE   equ 5
+FILESYS_OPEN_SETMEMPTR  equ 6
+FILESYS_NEXT_GETNEXT    equ 9
+FILESYS_NEXT_SETMEMPTR  equ 10
+FILESYS_CLOSE_FILE      equ 12
+
+OPEN_READ               equ 0
+OPEN_WRITE              equ 1
+OPEN_WRITE_CREATE       equ 2
+OPEN_APPEND             equ 3
+OPEN_RDWR               equ 4
+
+COLOUR_BLACK   equ 00000h
+COLOUR_BLUE    equ 0001Fh
+COLOUR_RED     equ 0F800h
+COLOUR_GREEN   equ 007E0h
+COLOUR_CYAN    equ 007FFh
+COLOUR_MAGENTA equ 0F81Fh
+COLOUR_YELLOW  equ 0FFE0h
+COLOUR_WHITE   equ 0FFFFh
+
+
+PROG_MEM_START equ 01000h
+
+  .org 0000h
+start:
+  di
+  ld sp, 3fffh
+  ld a, 0Bh
+  ld I, a
+  
+  ld de, str_boot_msg
+  call print_string
+  call newline
+  
+  ld de, str_console_setup
+  call print_string
+  ld a, 36
+  out ($05), a
+  ld b, 0E0h
+  ld c, 07h
+  call setcolour
+  ld de, str_ok_boot
+  call print_string
+  call newline
+  
+  ld b, 0FFh
+  ld c, 0FFh
+  call setcolour
+  
+  out ($00), a ;set the high byte to the console for the display printer
+  
+  
+  ld de, str_configure_serial
+  call print_string
+  ld a, 36
+  out ($05), a
+  
+  ;
+  ; Set up and initialize the serial device
+  ;
+  ;ld a, SERIAL_CMD_SET_INTVECTOR
+  ;out ($01), a ; put the serial device in SET_INTVECTOR mode
+  ;ld a, INTVECTOR_SERIAL_DEVICE
+  ;out ($01), a ;set the serial in interrupt vector
+  
+  
+  ld a, SERIAL_CMD_SET_RATE
+  out ($01), a ; set the serial rate (9600)
+  ld a, 80h
+  out ($01), a 
+  ld a, 25h
+  out ($01), a 
+  
+  
+  ld b, 0E0h
+  ld c, 07h
+  call setcolour
+  ld de, str_ok_boot
+  call print_string
+  call newline
+  
+  
+  ld b, 0FFh
+  ld c, 0FFh
+  call setcolour
+  ld de, str_connect_serial_wait
+  call print_string
+  ld a, 36
+  out ($05), a
+  
+  ld a, SERIAL_CMD_INIT
+  out ($01), a ; init the serial device 
+  ld a, 2Bh
+  out ($02), a ; print + to serial
+  
+  
+  ld b, 0E0h
+  ld c, 07h
+  call setcolour
+  ld de, str_ok_boot
+  call print_string
+  call newline
+  
+  
+  ld b, 0FFh
+  ld c, 0FFh
+  call setcolour
+  
+  
+  ld de, str_connect_serial_ok
+  call print_string
+  call newline
+  
+  
+open_volume_root_dir:
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_root_dir_open
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jp nz, Lfile_fail                  ; if non-zero jump to fail 
+
+
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  
+  
+  call newline
+  
+  im 2
+  ei
+  ld de, str_console_banner_1
+  call print_string
+  call newline
+  ld de, str_console_banner_2
+  call print_string
+  
+  call newline
+prompt_begin:  
+  call console_clearbuffer
+  call newline
+  ld de, str_console_prompt
+  call print_string
+
+echo_serial:
+  call getchar
+  cp 13                 ;carriage return?
+  jr z, parse_command 
+  call console_addchar
+  call putchar
+  jr echo_serial
+  
+parse_command:
+  ; for now, shove the 12 chars into the open request.
+  ; de = src ptr
+  ; hl = dst ptr
+  ; bc = size
+  ld de, console_line_buffer
+  ld hl, filesys_open_read_name
+  ld bc, 12
+  call memcpy
+  
+  call newline
+open_file:
+  ld a, FILESYS_OPEN_SETMEMPTR
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld de, filesys_open_read
+  ld a, e
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, d
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, FILESYS_OPEN_OPENFILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jr nz, Lfile_fail_cmd                  ; if non-zero jump to fail above
+
+
+  ld de, filesys_open_read + 1
+  ld hl, filesys_read_request + 4
+  ld a, (de)
+  ld (hl), a
+  inc de
+  inc hl
+  ld a, (de)
+  ld (hl), a
+  
+
+read_file:
+  ld a, FILESYS_RW_SETCMDMEMPTR
+  out (PORT_FILESYS_READ_WRITE), a
+  ld de, filesys_read_request
+  ld a, e
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, d
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, FILESYS_RW_EXEC
+  out (PORT_FILESYS_READ_WRITE), a
+  ld a, (de)                         ; load the error byte
+  or a
+  jr nz, Lfile_fail                  ; if non-zero jump to fail above
+  
+  ld a, FILESYS_CLOSE_FILE
+  out (PORT_FILESYS_OPEN_CLOSE), a
+
+  call PROG_MEM_START
+  
+  ;ld a, 0
+  ;out (PORT_DISP_CLEAR), a
+  jr prompt_begin
+  
+infloop: ; halt (wait for interrupts) 
+  halt
+  jr infloop
+  
+Lfile_fail: ; error code (0-9) in a
+  call file_error_report
+  jr prompt_begin
+  
+Lfile_fail_cmd:  ; error code (0-9) in a
+  push de
+  ld b, 000h
+  ld c, 0F8h
+  call setcolour
+  ld de, str_error_code
+  call print_string
+  add a, 30h               ; get ascii 0-9
+  out ($03), a  ;code
+  ld de, str_error_opening
+  call print_string
+  ld de, console_line_buffer
+  call print_string
+  ld b, 0FFh
+  ld c, 0FFh
+  call setcolour
+  pop de
+  jp prompt_begin
+  
+file_error_report:
+  ld de, str_error_file
+  call print_string
+  ;;call fatal_error_halt
+  ret
+  
+fatal_error_halt:
+  call newline
+  ld bc, COLOUR_RED
+  call setcolour
+  ld de, str_halt
+  call print_string
+fatal_error_halt_1:
+  halt
+  jr fatal_error_halt_1
+  
+strcpy:
+  push af 
+strcpy_loop: 
+  ld a, (de)
+  ld (hl), a
+  inc hl
+  inc de
+  or a
+  jr nz,strcpy_loop  
+  pop af
+  ret
+  
+  ; de = src ptr
+  ; hl = dst ptr
+  ; bc = size
+memcpy:
+  push af 
+  push de
+  push hl
+  push bc
+memcpy_loop: 
+  ld a, b
+  or c
+  jr z, memcpy_end
+  dec bc
+  ld a, (de)
+  ld (hl), a
+  inc hl
+  inc de
+  jr memcpy_loop
+memcpy_end:  
+  pop bc
+  pop hl
+  pop de
+  pop af
+  ret
+  
+  ; d  = src byte
+  ; hl = dst ptr
+  ; bc = size
+memset:
+  push af 
+  push de
+  push hl
+  push bc
+memset_loop: 
+  ld a, b
+  or c
+  jr z, memset_end
+  dec bc
+  ld a, d
+  ld (hl), a
+  inc hl
+  jr memset_loop
+memset_end:  
+  pop bc
+  pop hl
+  pop de
+  pop af
+  ret
+  
+print_string:
+  push af 
+print_string_loop: 
+  ld a, (de)
+  or a
+  jr z, print_string_end
+  out ($03), a 
+  inc de
+  jr print_string_loop 
+print_string_end:
+  pop af
+  ret
+  
+  
+ihdlr_unknown:
+  di
+  push de
+  ld de, str_unknownint
+  call print_string
+  pop de
+  ei
+  reti
+  
+    
+ihdlr_ignore:
+  di
+  ei
+  reti
+  
+ihdlr_serial_in:
+  di
+  push af
+  push bc
+  ;push de
+  ; read from serial status port
+  in a, ($01)
+  or a
+  jr z, skip_serial_in
+  ld b, a
+  ;ld de, cbuffer
+print_serial_char:
+  ; read char from serial data port
+  in a, ($02)
+  ; echo it to console
+  out ($03), a 
+  ;ld (de), a
+  ;inc de
+  djnz print_serial_char
+skip_serial_in:
+  ;pop de
+  pop bc
+  pop af
+  ei
+  reti
+
+ihdlr_second_timer:
+  di
+  push af
+  ld a, 02eh        ;print period to console
+  out ($03), a
+  pop af
+  ei
+  reti
+  
+getchar:            ; returns char in a register
+  in a, ($01)       ; read from serial status port
+  or a
+  jr z, getchar     ; while no data is available, wait
+  in a, ($02)       ; read char from serial data port
+  ret
+
+putchar:            ; char passed in a register
+  out ($03), a      ; simply write the char to output
+  ret
+  
+newline:
+  in a, ($04)
+  inc a
+  out ($04), a
+  ld a, 0
+  out ($05), a
+  ret
+  
+setcolour: ;16-bit colour in bc
+  push af
+  ld a, b
+  out ($06), a
+  ld a, c
+  out ($06), a
+  pop af
+  ret
+ 
+str_unknownint:
+  defb 'Unknown Interrupt Vector',0
+
+str_ok_boot:
+  defb '[OK]',0
+  
+str_done_boot:
+  defb '[DONE]',0
+  
+str_error_boot:
+  defb '[ERROR]',0
+
+str_boot_msg:
+  defb 'TeensyZ80 booting...',0
+  
+str_console_setup:
+  defb 'Console initializing...',0
+
+str_configure_serial:
+  defb 'Configuring serial connection...',0
+
+str_connect_serial_wait:
+  defb 'Waiting for serial connection...',0
+  
+str_connect_serial_ok:
+  defb 'Serial connection established.',0
+  
+str_console_banner_1:
+  defb 'Copyright(C) Domipheus Labs',0
+
+str_console_banner_2:
+  defb 'Welcome to TeensyZ80!',0
+  
+str_console_prompt:
+  defb 'TeensyZ80>',0
+  
+str_error_code:
+  defb 'Error code: ',0
+  
+str_error_opening:
+  defb ' whilst opening: ',0
+
+str_error_file:
+  defb 'Filesystem error!',0
+  
+str_halt:
+  defb 'Fatal Error. <HALT>',0
+  
+; interrupt vector table
+  .ORG 0B00h
+int_vector_table:
+  dw ihdlr_ignore
+  dw ihdlr_ignore
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  dw ihdlr_unknown
+  
+
+; console line
+
+  
+console_line_current_row:
+   defb 0
+console_line_buffer_pos:
+   defb 0
+   
+  .ORG 0C00h
+console_line_buffer:
+   dc 256, 0
+   
+console_addchar:        ;char in a
+  push hl
+  push bc
+  ld bc, console_line_buffer
+  ld hl, console_line_buffer_pos
+  ld c, (hl)
+  ld (bc), a
+  inc c
+  ld (hl), c
+  pop bc
+  pop hl
+  ret
+  
+console_clearbuffer:
+  ; d  = src byte
+  ; hl = dst ptr
+  ; bc = size
+  push de
+  push hl
+  push bc
+  ld d, 0
+  ld hl, console_line_buffer
+  ld bc, 256
+  call memset
+  ld hl, console_line_buffer_pos
+  ld (hl), 0
+  pop bc
+  pop hl
+  pop de
+  ret
+  
+  .org 0d00h
+SysFuncTable:
+  dw 1
+  dw getchar
+  dw putchar
+  
+filesys_root_dir_open:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'/',0,0,0 ; error byte (init to error), open type byte, filename 8.3, null
+   
+
+filesys_open_read:
+  defb 0ffh,0,0,0,0,0,OPEN_READ,'abcdef.BIN',0,0,0
+filesys_open_read_name equ (filesys_open_read+7)
+  
+filesys_read_request:
+  ; error, type, offsetlo,offsethi,sizelo,sizehi
+  defb 0ffh,0,0,0,0,0
+  defw PROG_MEM_START
+  
+end
