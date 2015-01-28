@@ -59,7 +59,7 @@
 #define AD11 A12
 #define AD12 A11
 #define AD13 A13
-#define AD14 
+#define AD14 A14
 #define AD15 
 
 #define D0 1
