@@ -1,0 +1,51 @@
+; 
+; TeensyZ80 bootloader to multithreadded kernel.bin 
+; This needs to be assembled and bin2h'd into the
+; Teensy Z80 sketch controller
+
+  .org 0000h
+start:
+  di
+  ld sp, stack_kernel_top
+  im 2
+  ld a, 01h
+  ld i, a
+  jp kernel
+  
+  .org 0100h
+vectors:
+  dc 256, 0
+  
+  .org 0200h
+thread_data:
+  
+  .org 0300h
+stack_1_bottom:
+  
+  .org 0400h
+stack_1_top:
+
+  .org 0500h
+stack_2_top:
+
+  .org 0600h
+stack_3_top:
+
+  .org 0700h
+stack_4_top:
+
+  .org 07F0h
+stack_kernel_top;
+
+  .org 0800h
+kernel:
+  ld a, 0
+  out (04h), a
+  out (05h), a
+  ld a, '?'
+  out (03h), a
+  halt
+
+  
+  
+  
