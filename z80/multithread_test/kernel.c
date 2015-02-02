@@ -284,9 +284,11 @@ int zthread_join(zthread_t handle) {
     }
   }
   
-  threads[thisThread].flags = ZTHREAD_WAIT_JOIN;
   threads[thisThread].state_data = handle;
+  threads[thisThread].flags = ZTHREAD_WAIT_JOIN;
   
+  // If other interrupts exist in the system, here we actually need to swap out 
+  // within a critical section
   __asm
     halt
   __endasm;
@@ -315,7 +317,7 @@ void _TZL_thread_exited( void ) {
   
   // For now, just set the flag as free. 
   // Really we should set as exited and we can then
-  // look to get the return value.
+  // look to get any return value.
   threads[thisThread].flags = ZTHREAD_HDL_FREE;
   
   // this thread ends here. halt so we can be swapped out.
@@ -330,7 +332,7 @@ int zthread_start(zthread_t handle) {
   // as writes on the z80 are technically atomic, 
   // as long as the last write in this function is the
   // flags set we do not need to be in a critical section!
-  threads[handle].ctx.sp = ((unsigned short)threads[handle].stack_start)-16;
+  threads[handle].ctx.sp = ((unsigned short)threads[handle].stack_start)-18;
   stack = (short*)threads[handle].ctx.sp;
   stack[0] = 0; //  pop iy
   stack[1] = 0; //  pop ix
